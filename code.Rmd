@@ -1,0 +1,786 @@
+---
+title: "Projeto Biostatística"
+output: html_notebook
+---
+
+```{r}
+library(ggplot2)
+library(DescTools)
+library(readr)
+library(dplyr)
+library(survival)
+library(survminer)
+```
+
+Loading and preparing the data
+
+```{r}
+
+data_paxis <- read.csv("data_paxis.csv")
+data_type_paxis <- read.csv("data_type_paxis.csv")
+data_pamp <- read.csv("data_pamp.csv")
+data_type_pamp <- read.csv("data_type_pamp.csv")
+
+#====== PAXIS COFFEE INTAKE ======
+
+# Comprehensive data preprocessing
+data_paxis <- data_paxis %>% filter(CAUSE == 1 | MORTSTAT == 0)
+data_paxis <- data_paxis %>%
+  mutate(
+    # Convert character variables to numeric
+    MORTSTAT = as.numeric(MORTSTAT),
+    
+    # Enhanced coffee categorization
+    coffee_category = case_when(
+      COFFEE == 0 ~ "None",
+      COFFEE > 0 & COFFEE <= 30 ~ "Low (1-30)",
+      COFFEE > 30 & COFFEE <= 99 ~ "Moderate (30-99)",
+      COFFEE > 99 ~ "High (>99)"
+    ),
+    coffee_category = factor(coffee_category, 
+                           levels = c("None", "Low (1-30)", "Moderate (30-99)", "High (>99)")),
+    
+    # Binary coffee consumption
+    coffee_binary = factor(ifelse(COFFEE > 0, "Coffee Drinker", "Non-Drinker"),
+                          levels = c("Non-Drinker", "Coffee Drinker")),
+    
+    # Enhanced caffeine categorization
+    caffeine_category = case_when(
+      CAFFEINE == 0 ~ "None",
+      CAFFEINE > 0 & CAFFEINE <= 100 ~ "Low (1-100mg)",
+      CAFFEINE > 100 & CAFFEINE <= 300 ~ "Moderate (101-300mg)",
+      CAFFEINE > 300 ~ "High (>300mg)"
+    ),
+    caffeine_category = factor(caffeine_category, 
+                             levels = c("None", "Low (1-100mg)", "Moderate (101-300mg)", 
+                                      "High (>300mg)")),
+    
+    # Enhanced smoking categorization
+    smoking_status = case_when(
+      CIGARETTES == 0 ~ "Non-smoker",
+      CIGARETTES > 0 & CIGARETTES <= 10 ~ "Light (1-10/day)",
+      CIGARETTES > 10 & CIGARETTES <= 20 ~ "Moderate (11-20/day)",
+      CIGARETTES > 20 ~ "Heavy (>20/day)"
+    ),
+    smoking_status = factor(smoking_status, 
+                          levels = c("Non-smoker", "Light (1-10/day)", 
+                                   "Moderate (11-20/day)", "Heavy (>20/day)")),
+    
+    # Physical activity groups
+    activity_level = case_when(
+      ACTIVE == 2 ~ "Inactive",
+      ACTIVE == 1 | ACTIVE == 3 ~ "Active"
+    ),
+    activity_level = factor(activity_level, levels = c("Inactive", "Active")),
+    
+    # Convert other categorical variables
+    SEX = factor(SEX, labels = c("Male", "Female")),
+    RACE = factor(RACE, labels = c("White", "Black", "Other")),
+    HYPERTENSION = factor(HYPERTENSION, 
+                         levels = c(2, 1),
+                         labels = c("No", "Yes")),
+    DIABETES = factor(DIABETES,
+                     levels = c(2, 1),
+                     labels = c("No", "Yes")),
+    
+    # Mortality status as factor
+    MORTALITY_STATUS = factor(MORTSTAT, levels = c(0, 1), labels = c("Alive", "Dead")),
+    
+    
+    # Combined risk score (simplified)
+    risk_score = (as.numeric(HYPERTENSION == "Yes") + 
+                  as.numeric(DIABETES == "Yes") + 
+                  as.numeric(CIGARETTES > 0) + 
+                  as.numeric(AGE > 65)),
+    
+      risk_category = case_when(
+        risk_score <= 1 ~ "Low risk",
+        risk_score == 2 ~ "Moderate risk",
+        risk_score >= 3 ~ "High risk"
+      )
+    ) 
+
+#====== PAXIS COFFEE TYPE ======
+
+# Comprehensive data preprocessing
+data_type_paxis <- data_type_paxis %>% filter(CAUSE == 1 | MORTSTAT == 0)
+data_type_paxis <- data_type_paxis %>%
+  mutate(
+    # Convert character variables to numeric
+    MORTSTAT = as.numeric(MORTSTAT),
+    
+    # Enhanced coffee categorization
+    coffee_type_category = case_when(
+      TYPE == 0 ~ "Decaffeinated",
+      TYPE == 1 ~ "Caffeinated",
+      TYPE == 2 ~ "Both"
+    ),
+    coffee_type_category = factor(coffee_type_category, 
+                           levels = c("Decaffeinated", "Caffeinated", "Both")),
+
+    
+    # Enhanced smoking categorization
+    smoking_status = case_when(
+      CIGARETTES == 0 ~ "Non-smoker",
+      CIGARETTES > 0 & CIGARETTES <= 10 ~ "Light (1-10/day)",
+      CIGARETTES > 10 & CIGARETTES <= 20 ~ "Moderate (11-20/day)",
+      CIGARETTES > 20 ~ "Heavy (>20/day)"
+    ),
+    smoking_status = factor(smoking_status, 
+                          levels = c("Non-smoker", "Light (1-10/day)", 
+                                   "Moderate (11-20/day)", "Heavy (>20/day)")),
+    
+    # Physical activity groups
+    activity_level = case_when(
+      ACTIVE == 2 ~ "Inactive",
+      ACTIVE == 1 | ACTIVE == 3 ~ "Active"
+    ),
+    activity_level = factor(activity_level, levels = c("Inactive", "Active")),
+    
+    # Convert other categorical variables
+    SEX = factor(SEX, labels = c("Male", "Female")),
+    RACE = factor(RACE, labels = c("White", "Black", "Other")),
+    HYPERTENSION = factor(HYPERTENSION, 
+                         levels = c(2, 1),
+                         labels = c("No", "Yes")),
+    DIABETES = factor(DIABETES,
+                     levels = c(2, 1),
+                     labels = c("No", "Yes")),
+    
+    # Mortality status as factor
+    MORTALITY_STATUS = factor(MORTSTAT, levels = c(0, 1), labels = c("Alive", "Dead")),
+    
+    
+    # Combined risk score (simplified)
+    risk_score = (as.numeric(HYPERTENSION == "Yes") + 
+                  as.numeric(DIABETES == "Yes") + 
+                  as.numeric(CIGARETTES > 0) + 
+                  as.numeric(AGE > 65)),
+    
+      risk_category = case_when(
+        risk_score <= 1 ~ "Low risk",
+        risk_score == 2 ~ "Moderate risk",
+        risk_score >= 3 ~ "High risk"
+      )
+    ) 
+
+#====== PAMP COFFEE INTAKE ======
+
+# Comprehensive data preprocessing
+data_pamp <- data_pamp %>% filter(CAUSE == 1 | MORTSTAT == 0)
+data_pamp <- data_pamp %>%
+  mutate(
+    # Convert character variables to numeric
+    MORTSTAT = as.numeric(MORTSTAT),
+    
+    # Enhanced coffee categorization
+    coffee_category = case_when(
+      COFFEE == 0 ~ "None",
+      COFFEE > 0 & COFFEE <= 30 ~ "Low (1-30)",
+      COFFEE > 30 & COFFEE <= 99 ~ "Moderate (30-99)",
+      COFFEE > 99 ~ "High (>99)"
+    ),
+    coffee_category = factor(coffee_category, 
+                           levels = c("None", "Low (1-30)", "Moderate (30-99)", "High (>99)")),
+    
+    # Binary coffee consumption
+    coffee_binary = factor(ifelse(COFFEE > 0, "Coffee Drinker", "Non-Drinker"),
+                          levels = c("Non-Drinker", "Coffee Drinker")),
+    
+    # Enhanced caffeine categorization
+    caffeine_category = case_when(
+      CAFFEINE == 0 ~ "None",
+      CAFFEINE > 0 & CAFFEINE <= 100 ~ "Low (1-100mg)",
+      CAFFEINE > 100 & CAFFEINE <= 300 ~ "Moderate (101-300mg)",
+      CAFFEINE > 300 ~ "High (>300mg)"
+    ),
+    caffeine_category = factor(caffeine_category, 
+                             levels = c("None", "Low (1-100mg)", "Moderate (101-300mg)", 
+                                      "High (>300mg)")),
+    
+    # Enhanced smoking categorization
+    smoking_status = case_when(
+      CIGARETTES == 0 ~ "Non-smoker",
+      CIGARETTES > 0 & CIGARETTES <= 10 ~ "Light (1-10/day)",
+      CIGARETTES > 10 & CIGARETTES <= 20 ~ "Moderate (11-20/day)",
+      CIGARETTES > 20 ~ "Heavy (>20/day)"
+    ),
+    smoking_status = factor(smoking_status, 
+                          levels = c("Non-smoker", "Light (1-10/day)", 
+                                   "Moderate (11-20/day)", "Heavy (>20/day)")),
+    
+    # Physical activity groups
+    activity_level = case_when(
+      ACTIVE == 2 ~ "Inactive",
+      ACTIVE == 1 | ACTIVE == 3 ~ "Active"
+    ),
+    activity_level = factor(activity_level, levels = c("Inactive", "Active")),
+    
+    # Convert other categorical variables
+    SEX = factor(SEX, labels = c("Male", "Female")),
+    RACE = factor(RACE, labels = c("White", "Black", "Other")),
+    HYPERTENSION = factor(HYPERTENSION, 
+                         levels = c(2, 1),
+                         labels = c("No", "Yes")),
+    DIABETES = factor(DIABETES,
+                     levels = c(2, 1),
+                     labels = c("No", "Yes")),
+    
+    # Mortality status as factor
+    MORTALITY_STATUS = factor(MORTSTAT, levels = c(0, 1), labels = c("Alive", "Dead")),
+    
+    
+    # Combined risk score (simplified)
+    risk_score = (as.numeric(HYPERTENSION == "Yes") + 
+                  as.numeric(DIABETES == "Yes") + 
+                  as.numeric(CIGARETTES > 0) + 
+                  as.numeric(AGE > 65)),
+    
+      risk_category = case_when(
+        risk_score <= 1 ~ "Low risk",
+        risk_score == 2 ~ "Moderate risk",
+        risk_score >= 3 ~ "High risk"
+      )
+    ) 
+
+#====== PAMP COFFEE TYPE ======
+
+# Comprehensive data preprocessing
+data_type_pamp <- data_type_pamp %>% filter(CAUSE == 1 | MORTSTAT == 0)
+data_type_pamp <- data_type_pamp %>%
+  mutate(
+    # Convert character variables to numeric
+    MORTSTAT = as.numeric(MORTSTAT),
+    
+    # Enhanced coffee categorization
+    coffee_type_category = case_when(
+      TYPE == 0 ~ "Decaffeinated",
+      TYPE == 1 ~ "Caffeinated",
+      TYPE == 2 ~ "Both"
+    ),
+    coffee_type_category = factor(coffee_type_category, 
+                           levels = c("Decaffeinated", "Caffeinated", "Both")),
+
+    
+    # Enhanced smoking categorization
+    smoking_status = case_when(
+      CIGARETTES == 0 ~ "Non-smoker",
+      CIGARETTES > 0 & CIGARETTES <= 10 ~ "Light (1-10/day)",
+      CIGARETTES > 10 & CIGARETTES <= 20 ~ "Moderate (11-20/day)",
+      CIGARETTES > 20 ~ "Heavy (>20/day)"
+    ),
+    smoking_status = factor(smoking_status, 
+                          levels = c("Non-smoker", "Light (1-10/day)", 
+                                   "Moderate (11-20/day)", "Heavy (>20/day)")),
+    
+    # Physical activity groups
+    activity_level = case_when(
+      ACTIVE == 2 ~ "Inactive",
+      ACTIVE == 1 | ACTIVE == 3 ~ "Active"
+    ),
+    activity_level = factor(activity_level, levels = c("Inactive", "Active")),
+    
+    # Convert other categorical variables
+    SEX = factor(SEX, labels = c("Male", "Female")),
+    RACE = factor(RACE, labels = c("White", "Black")),
+    HYPERTENSION = factor(HYPERTENSION, 
+                         levels = c(2, 1),
+                         labels = c("No", "Yes")),
+    DIABETES = factor(DIABETES,
+                     levels = c(2, 1),
+                     labels = c("No", "Yes")),
+    
+    # Mortality status as factor
+    MORTALITY_STATUS = factor(MORTSTAT, levels = c(0, 1), labels = c("Alive", "Dead")),
+    
+    
+    # Combined risk score (simplified)
+    risk_score = (as.numeric(HYPERTENSION == "Yes") + 
+                  as.numeric(DIABETES == "Yes") + 
+                  as.numeric(CIGARETTES > 0) + 
+                  as.numeric(AGE > 65)),
+    
+      risk_category = case_when(
+        risk_score <= 1 ~ "Low risk",
+        risk_score == 2 ~ "Moderate risk",
+        risk_score >= 3 ~ "High risk"
+      )
+    ) 
+```
+
+ANOVA for different caffeine intake categories against age of death (individuals with abnormal P wave axis).
+
+```{r}
+
+# Filtrar apenas indivíduos que morreram
+mortos <- data_paxis %>% filter(!is.na(AGE.DEATH))
+
+# ANOVA
+anova_model <- aov(AGE.DEATH ~ caffeine_category, data = mortos)
+summary(anova_model)
+
+# Teste de Tukey HSD
+TukeyHSD(anova_model)
+
+# Gráfico boxplot
+ggplot(mortos, aes(x = caffeine_category, y = AGE.DEATH)) +
+  geom_boxplot() +
+  labs(title = "Age at death per caffeine category",
+       x = "Caffeine category",
+       y = "Age at death") +
+  theme_minimal()
+
+# Kruskal–Wallis test
+kruskal.test(AGE.DEATH ~ caffeine_category, data = data_paxis)
+
+pairwise.wilcox.test(data_paxis$AGE.DEATH,
+                     data_paxis$caffeine_category,
+                     p.adjust.method = "bonferroni")
+
+```
+
+ANOVA for different coffee consumption categories against age of death (individuals with abnormal P wave axis).
+
+```{r}
+# Garantir que coffee_category tem a ordem certa
+data_paxis$coffee_category <- factor(data_paxis$coffee_category,
+                                     levels = c("None", "Low (1-30)", "Moderate (30-99)", "High (>99)"))
+
+# Filtrar indivíduos que morreram
+mortos <- data_paxis %>% filter(!is.na(AGE.DEATH))
+
+# ANOVA
+anova_model <- aov(AGE.DEATH ~ coffee_category, data = mortos)
+summary(anova_model)
+
+# Gráfico boxplot
+ggplot(mortos, aes(x = coffee_category, y = AGE.DEATH)) +
+  geom_boxplot() +
+  labs(title = "Age at death per coffee category",
+       x = "Coffee category",
+       y = "Age at death") +
+  theme_minimal()
+
+# Kruskal–Wallis test
+kruskal.test(AGE.DEATH ~ coffee_category, data = data_paxis)
+
+```
+
+ANOVA for different coffee types categories against age of death (individuals with abnormal P wave axis).
+
+```{r}
+# Filtrar apenas indivíduos que morreram
+mortos <- data_type_paxis %>% filter(!is.na(AGE.DEATH))
+
+# ANOVA
+anova_model <- aov(AGE.DEATH ~ coffee_type_category, data = mortos)
+summary(anova_model)
+
+# Gráfico boxplot
+ggplot(mortos, aes(x = coffee_type_category, y = AGE.DEATH)) +
+  geom_boxplot() +
+  labs(title = "Age at death per coffee type category",
+       x = "Coffee Type",
+       y = "Age at death") +
+  theme_minimal()
+
+# Kruskal–Wallis test
+kruskal.test(AGE.DEATH ~ coffee_type_category, data = data_type_paxis)
+
+```
+
+ANOVA for different caffeine intake categories against age of death (individuals with abnormal negative P wave amplitude).
+
+```{r}
+
+# Filtrar apenas indivíduos que morreram
+mortos <- data_pamp %>% filter(!is.na(AGE.DEATH))
+
+# ANOVA
+anova_model <- aov(AGE.DEATH ~ caffeine_category, data = mortos)
+summary(anova_model)
+
+# Gráfico boxplot
+ggplot(mortos, aes(x = caffeine_category, y = AGE.DEATH)) +
+  geom_boxplot() +
+  labs(title = "Age at death per caffeine category",
+       x = "Caffeine Category",
+       y = "Age at death") +
+  theme_minimal()
+
+# Kruskal–Wallis test
+kruskal.test(AGE.DEATH ~ caffeine_category, data = data_pamp)
+```
+
+ANOVA for different coffee consumption categories against age of death (individuals with abnormal negative P wave amplitude).
+
+```{r}
+# Garantir que coffee_category tem a ordem certa
+data_pamp$coffee_category <- factor(data_pamp$coffee_category,
+                                     levels = c("None", "Low (1-30)", "Moderate (30-99)", "High (>99)"))
+
+# Filtrar indivíduos que morreram
+mortos <- data_pamp %>% filter(!is.na(AGE.DEATH))
+
+# ANOVA
+anova_model <- aov(AGE.DEATH ~ coffee_category, data = mortos)
+summary(anova_model)
+
+# Gráfico boxplot
+ggplot(mortos, aes(x = coffee_category, y = AGE.DEATH)) +
+  geom_boxplot() +
+  labs(title = "Age at death per coffee category",
+       x = "Coffee category",
+       y = "Age at death") +
+  theme_minimal()
+
+# Kruskal–Wallis test
+kruskal.test(AGE.DEATH ~ coffee_category, data = data_pamp)
+```
+
+ANOVA for different coffee types categories against age of death (individuals with abnormal negative P wave amplitude).
+
+```{r}
+# Filtrar apenas indivíduos que morreram
+mortos <- data_type_pamp %>% filter(!is.na(AGE.DEATH))
+
+# ANOVA
+anova_model <- aov(AGE.DEATH ~ coffee_type_category, data = mortos)
+summary(anova_model)
+
+# Gráfico boxplot
+ggplot(mortos, aes(x = coffee_type_category, y = AGE.DEATH)) +
+  geom_boxplot() +
+  labs(title = "Age at death per coffee type category",
+       x = "Coffee Type",
+       y = "Age at death") +
+  theme_minimal()
+
+# Kruskal–Wallis test
+kruskal.test(AGE.DEATH ~ coffee_type_category, data = data_type_pamp)
+```
+
+Survival analysis for different caffeine intake categories adjusted to confounding variables (individuals with abnormal P wave axis).
+
+```{r}
+# Survival object
+surv_obj <- Surv(time = data_paxis$TIME, event = data_paxis$MORTSTAT)
+
+# Fit survival curves by caffeine category
+fit_km <- survfit(surv_obj ~ caffeine_category, data = data_paxis)
+
+
+# Cox model multivariat (adjusted to age, sex, etc.)
+cox_multi <- coxph(Surv(TIME, MORTSTAT) ~ caffeine_category + smoking_status + activity_level + AGE + SEX + DIABETES + HYPERTENSION,
+                   data = data_paxis)
+summary(cox_multi)
+
+new_data <- data.frame(
+  caffeine_category = levels(data_paxis$caffeine_category),
+  smoking_status = "Non-smoker",
+  activity_level = "Inactive",
+  AGE = mean(data_paxis$AGE, na.rm = TRUE),
+  SEX = "Male",
+  DIABETES = "No",
+  HYPERTENSION = "No"
+)
+
+# Survival curve for each group
+fit_cox <- survfit(cox_multi, newdata = new_data)
+
+# Log-rank test
+logrank_test <- survdiff(surv_obj ~ caffeine_category, data = data_paxis)
+
+logrank_test
+
+# Plot
+ggsurvplot(fit_km,
+           data = data_paxis,
+           pval = TRUE,
+           conf.int = TRUE,
+           risk.table = TRUE,
+           xlab = "Time (months)",
+           ylab = "Survival probability",
+           legend.title = "Caffeine category",
+           legend.labs = c("None", "Low", "Moderate", "High"))
+
+ggsurvplot(fit_cox,
+           data = new_data,
+           conf.int = TRUE,
+           risk.table = TRUE,
+           legend.title = "Caffeine category",
+           legend.labs = c("None", "Low", "Moderate", "High"),
+           xlab = "Time (months)",
+           ylab = "Survival probability")
+```
+
+Survival analysis for different coffee consumption categories adjusted to confounding variables (individuals with abnormal P wave axis).
+
+```{r}
+# Survival object
+surv_obj <- Surv(time = data_paxis$TIME, event = data_paxis$MORTSTAT)
+
+# Fit survival curves by coffee consumption category
+fit_km <- survfit(surv_obj ~ coffee_category, data = data_paxis)
+
+
+# Cox model multivariat (adjusted to age, sex, etc.)
+cox_multi <- coxph(Surv(TIME, MORTSTAT) ~ coffee_category + smoking_status + activity_level + AGE + SEX + DIABETES + HYPERTENSION,
+                   data = data_paxis)
+summary(cox_multi)
+
+new_data <- data.frame(
+  coffee_category = levels(data_paxis$coffee_category),
+  smoking_status = "Non-smoker",
+  activity_level = "Inactive",
+  AGE = mean(data_paxis$AGE, na.rm = TRUE),
+  SEX = "Male",
+  DIABETES = "No",
+  HYPERTENSION = "No"
+)
+
+# Survival curve for each group
+fit_cox <- survfit(cox_multi, newdata = new_data)
+
+# Log-rank test
+logrank_test <- survdiff(surv_obj ~ coffee_category, data = data_paxis)
+
+logrank_test
+
+# Plot
+ggsurvplot(fit_km,
+           data = data_paxis,
+           pval = TRUE,
+           conf.int = TRUE,
+           risk.table = TRUE,
+           xlab = "Time (months)",
+           ylab = "Survival probability",
+           legend.title = "Coffee consumption category",
+           legend.labs = c("None", "Low", "Moderate", "High"))
+
+ggsurvplot(fit_cox,
+           data = new_data,
+           conf.int = TRUE,
+           risk.table = TRUE,
+           legend.title = "Coffee consumption category",
+           legend.labs = c("None", "Low", "Moderate", "High"),
+           xlab = "Time (months)",
+           ylab = "Survival probability")
+```
+
+Survival analysis for different coffee type categories adjusted to confounding variables (individuals with abnormal P wave axis).
+
+```{r}
+# Survival object
+surv_obj <- Surv(time = data_type_paxis$TIME, event = data_type_paxis$MORTSTAT)
+
+# Fit survival curves by coffee type category
+fit_km <- survfit(surv_obj ~ coffee_type_category, data = data_type_paxis)
+
+
+# Cox model multivariat (adjusted to age, sex, etc.)
+cox_multi <- coxph(Surv(TIME, MORTSTAT) ~ coffee_type_category + smoking_status + activity_level + AGE + SEX + DIABETES + HYPERTENSION,
+                   data = data_type_paxis)
+summary(cox_multi)
+
+new_data <- data.frame(
+  coffee_type_category = levels(data_type_paxis$coffee_type_category),
+  smoking_status = "Non-smoker",
+  activity_level = "Inactive",
+  AGE = mean(data_type_paxis$AGE, na.rm = TRUE),
+  SEX = "Male",
+  DIABETES = "No",
+  HYPERTENSION = "No"
+)
+
+# Survival curve for each group
+fit_cox <- survfit(cox_multi, newdata = new_data)
+
+# Log-rank test
+logrank_test <- survdiff(surv_obj ~ coffee_type_category, data = data_type_paxis)
+
+logrank_test
+
+# Plot
+ggsurvplot(fit_km,
+           data = data_type_paxis,
+           pval = TRUE,
+           conf.int = TRUE,
+           risk.table = TRUE,
+           xlab = "Time (months)",
+           ylab = "Survival probability",
+           legend.title = "Coffee type category",
+           legend.labs = c("Decaffeinated", "Caffeinated", "Both"))
+
+ggsurvplot(fit_cox,
+           data = new_data,
+           conf.int = TRUE,
+           risk.table = TRUE,
+           legend.title = "Coffee type category",
+           legend.labs = c("Decaffeinated", "Caffeinated", "Both"),
+           xlab = "Time (months)",
+           ylab = "Survival probability")
+```
+
+Survival analysis for different caffeine intake categories adjusted to confounding variables (individuals with abnormal negative P wave amplitude).
+
+```{r}
+# Survival object
+surv_obj <- Surv(time = data_pamp$TIME, event = data_pamp$MORTSTAT)
+
+# Fit survival curves by caffeine category
+fit_km <- survfit(surv_obj ~ caffeine_category, data = data_pamp)
+
+
+# Cox model multivariat (adjusted to age, sex, etc.)
+cox_multi <- coxph(Surv(TIME, MORTSTAT) ~ caffeine_category + smoking_status + activity_level + AGE + SEX + DIABETES + HYPERTENSION,
+                   data = data_pamp)
+summary(cox_multi)
+
+new_data <- data.frame(
+  caffeine_category = levels(data_pamp$caffeine_category),
+  smoking_status = "Non-smoker",
+  activity_level = "Inactive",
+  AGE = mean(data_pamp$AGE, na.rm = TRUE),
+  SEX = "Male",
+  DIABETES = "No",
+  HYPERTENSION = "No"
+)
+
+# Survival curve for each group
+fit_cox <- survfit(cox_multi, newdata = new_data)
+
+# Log-rank test
+logrank_test <- survdiff(surv_obj ~ caffeine_category, data = data_pamp)
+
+logrank_test
+
+# Plot
+ggsurvplot(fit_km,
+           data = data_pamp,
+           pval = TRUE,
+           conf.int = TRUE,
+           risk.table = TRUE,
+           xlab = "Time (months)",
+           ylab = "Survival probability",
+           legend.title = "Caffeine category",
+           legend.labs = c("None", "Low", "Moderate", "High"))
+
+ggsurvplot(fit_cox,
+           data = new_data,
+           conf.int = TRUE,
+           risk.table = TRUE,
+           legend.title = "Caffeine category",
+           legend.labs = c("None", "Low", "Moderate", "High"),
+           xlab = "Time (months)",
+           ylab = "Survival probability")
+```
+
+Survival analysis for different coffee consumption categories adjusted to confounding variables (individuals with abnormal negative P wave amplitude).
+
+```{r}
+# Survival object
+surv_obj <- Surv(time = data_pamp$TIME, event = data_pamp$MORTSTAT)
+
+# Fit survival curves by coffee consumption category
+fit_km <- survfit(surv_obj ~ coffee_category, data = data_pamp)
+
+
+# Cox model multivariat (adjusted to age, sex, etc.)
+cox_multi <- coxph(Surv(TIME, MORTSTAT) ~ coffee_category + smoking_status + activity_level + AGE + SEX + DIABETES + HYPERTENSION,
+                   data = data_pamp)
+summary(cox_multi)
+
+new_data <- data.frame(
+  coffee_category = levels(data_pamp$coffee_category),
+  smoking_status = "Non-smoker",
+  activity_level = "Inactive",
+  AGE = mean(data_pamp$AGE, na.rm = TRUE),
+  SEX = "Male",
+  DIABETES = "No",
+  HYPERTENSION = "No"
+)
+
+# Survival curve for each group
+fit_cox <- survfit(cox_multi, newdata = new_data)
+
+# Log-rank test
+logrank_test <- survdiff(surv_obj ~ coffee_category, data = data_pamp)
+
+logrank_test
+
+
+# Plot
+ggsurvplot(fit_km,
+           data = data_pamp,
+           pval = TRUE,
+           conf.int = TRUE,
+           risk.table = TRUE,
+           xlab = "Time (months)",
+           ylab = "Survival probability",
+           legend.title = "Coffee consumption category",
+           legend.labs = c("None", "Low", "Moderate", "High"))
+
+ggsurvplot(fit_cox,
+           data = new_data,
+           conf.int = TRUE,
+           risk.table = TRUE,
+           legend.title = "Coffee consumption category",
+           legend.labs = c("None", "Low", "Moderate", "High"),
+           xlab = "Time (months)",
+           ylab = "Survival probability")
+```
+
+Survival analysis for different coffee types categories adjusted to confounding variables (individuals with abnormal negative P wave amplitude).
+
+```{r}
+# Survival object
+surv_obj <- Surv(time = data_type_pamp$TIME, event = data_type_pamp$MORTSTAT)
+
+# Fit survival curves by coffee type category
+fit_km <- survfit(surv_obj ~ coffee_type_category, data = data_type_pamp)
+
+
+# Cox model multivariat (adjusted to age, sex, etc.)
+cox_multi <- coxph(Surv(TIME, MORTSTAT) ~ coffee_type_category + smoking_status + activity_level + AGE + SEX + DIABETES + HYPERTENSION,
+                   data = data_type_pamp)
+summary(cox_multi)
+
+new_data <- data.frame(
+  coffee_type_category = levels(data_type_pamp$coffee_type_category),
+  smoking_status = "Non-smoker",
+  activity_level = "Inactive",
+  AGE = mean(data_type_pamp$AGE, na.rm = TRUE),
+  SEX = "Male",
+  DIABETES = "No",
+  HYPERTENSION = "No"
+)
+
+# Survival curve for each group
+fit_cox <- survfit(cox_multi, newdata = new_data)
+
+# Log-rank test
+logrank_test <- survdiff(surv_obj ~ coffee_type_category, data = data_type_pamp)
+
+logrank_test
+
+# Plot
+ggsurvplot(fit_km,
+           data = data_type_pamp,
+           pval = TRUE,
+           conf.int = TRUE,
+           risk.table = TRUE,
+           xlab = "Time (months)",
+           ylab = "Survival probability",
+           legend.title = "Coffee type category",
+           legend.labs = c("Decaffeinated", "Caffeinated", "Both"))
+
+ggsurvplot(fit_cox,
+           data = new_data,
+           conf.int = TRUE,
+           risk.table = TRUE,
+           legend.title = "Coffee type category",
+           legend.labs = c("Decaffeinated", "Caffeinated", "Both"),
+           xlab = "Time (months)",
+           ylab = "Survival probability")
+```
